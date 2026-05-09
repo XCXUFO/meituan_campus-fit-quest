@@ -1,0 +1,19 @@
+{
+  "name": "campus-fit-quest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Campus Fit Quest mobile-first interview demo",
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "check": "node --check app.js",
+    "build": "node --check app.js"
+  },
+  "keywords": [
+    "campus",
+    "fitness",
+    "mobile-web",
+    "portfolio-demo"
+  ],
+  "license": "UNLICENSED"
+}
