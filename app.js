@@ -121,6 +121,8 @@ const defaultState = {
   offline: false,
   completedTasks: [],
   claimedBenefits: [],
+  redeemedBenefits: [],
+  reviewedBenefits: [],
   joinedChallenges: [],
   pushStyle: "吐槽陪伴型",
   energyEvents: [],
@@ -128,6 +130,17 @@ const defaultState = {
   route: null,
   cancellation: null,
   agreementChecked: false,
+  challengeDetail: null,
+  benefitDetail: null,
+  benefitTab: "recommend",
+  badgeDetail: null,
+  aboutSection: null,
+  feedbackThread: [],
+  devices: [
+    { id: "iphone", name: "iPhone 15 · 当前设备", meta: "上海 · 2026-05-10 09:20", current: true },
+    { id: "wechat", name: "微信内置浏览器", meta: "杭州 · 2026-05-08 21:16", current: false },
+    { id: "mac", name: "MacBook Chrome", meta: "上海 · 2026-05-06 15:42", current: false },
+  ],
   permissions: {
     定位: "已开启",
     相机: "已开启",
@@ -254,9 +267,42 @@ function shell(content, withTabs = true) {
           ${reward ? `<div class="reward-pop">${reward}</div>` : ""}
           ${toast ? `<div class="toast">${toast}</div>` : ""}
           ${withTabs && state.loggedIn ? renderTabs() : ""}
+          ${state.badgeDetail ? renderBadgeModal(state.badgeDetail) : ""}
           ${state.privacyStatus === null ? renderPrivacyModal() : ""}
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderBadgeModal(id) {
+  const def = badgeDefs.find((b) => b[0] === id);
+  if (!def) return "";
+  const [, name, icon] = def;
+  const unlocked = state.badges.includes(id);
+  const conditions = {
+    restart: "中断后再次完成任意运动任务，象征'重新开始没有惩罚'。",
+    "small-step": "完成一个 3 分钟以内的轻任务，纪念你没有完全躺平。",
+    weekly: "本周累计运动次数超过上周，与过去的自己比较。",
+    stable: "一周内累计完成 3 次运动，习惯正在养成。",
+    "night-run": "完成校园跑路线 1 次。",
+    buddy: "与寝室或搭子共同完成一次任务。",
+    benefit: "领取并核销 1 次商家权益。",
+    revive: "中断 3 天后重新开始运动，从低谷反弹。",
+    cert: "累计完成 30 次运动 + 解锁 6 个徽章，获得'校园运动达人'认证。",
+  };
+  return `
+    <div class="modal-backdrop" data-action="close-badge">
+      <section class="modal stack" onclick="event.stopPropagation()">
+        <div style="text-align:center" class="stack">
+          <div class="badge ${unlocked ? "" : "locked"}" style="display:inline-grid;width:140px;height:140px;margin:0 auto;font-size:14px">
+            <span style="font-size:48px">${icon}</span>${name}
+          </div>
+          <span class="pill" style="justify-self:center">${unlocked ? "已解锁" : "未解锁"}</span>
+        </div>
+        <p class="muted small">${conditions[id] || "持续运动即可解锁。"}</p>
+        <button class="btn" data-action="close-badge">关闭</button>
+      </section>
     </div>
   `;
 }
@@ -520,6 +566,7 @@ function renderRunMap(step = 0) {
 }
 
 function renderChallenge() {
+  if (state.challengeDetail) return renderChallengeDetail(state.challengeDetail);
   return `
     <div class="screen-title">
       <div>
@@ -534,11 +581,12 @@ function renderChallenge() {
           const joined = state.joinedChallenges.includes(item.id);
           const progress = Math.min(100, (item.progress / item.target) * 100);
           return `
-            <article class="card challenge-card stack">
-              <div>
+            <article class="card challenge-card stack clickable" data-action="open-challenge" data-challenge="${item.id}">
+              <div class="row">
                 <h3>${item.title}</h3>
-                <p class="muted">${item.desc}</p>
+                <span class="chevron">›</span>
               </div>
+              <p class="muted">${item.desc}</p>
               <div class="progress" style="--value:${progress}%"><span></span></div>
               <div class="row">
                 <span class="small muted">${item.progress}/${item.target}</span>
@@ -554,7 +602,100 @@ function renderChallenge() {
   `;
 }
 
+function renderChallengeDetail(id) {
+  const item = challenges.find((c) => c.id === id);
+  if (!item) return renderChallenge();
+  const joined = state.joinedChallenges.includes(id);
+  const progress = Math.min(100, (item.progress / item.target) * 100);
+  let body = "";
+
+  if (id === "dorm") {
+    const members = [
+      ["你", joined ? 3 : 2, joined ? "今日刚完成寝室打卡" : "今日待打卡"],
+      ["室友 A", 2, "今早晨跑 1.2km"],
+      ["室友 B", 1, "昨晚拉伸 8 分钟"],
+      ["室友 C", 0, "等待今日参与"],
+    ];
+    body = `
+      <h3>寝室成员贡献</h3>
+      <div class="stack">
+        ${members
+          .map(
+            ([name, count, note]) => `
+              <article class="card setting-row">
+                <span><strong>${name}</strong><p>${note}</p></span>
+                <span class="pill">${count} 次</span>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <p class="muted small">展示个人贡献，不展示群体内排名。寝室目标达成后徽章共同点亮。</p>
+    `;
+  } else if (id === "club") {
+    body = `
+      <h3>近期贡献流水</h3>
+      <div class="stack">
+        ${[
+          ["匿名同学", "晨跑 2.1km", "13 分钟前"],
+          ["匿名同学", "校园跑环线 1.5km", "1 小时前"],
+          ["匿名同学", "傍晚 800m 慢跑", "3 小时前"],
+          [joined ? "你" : "—", joined ? "刚刚贡献 1.5km" : "尚未贡献", joined ? "刚刚" : "—"],
+        ]
+          .map(
+            ([name, what, when]) => `
+              <article class="card setting-row">
+                <span><strong>${name}</strong><p>${what}</p></span>
+                <span class="muted small">${when}</span>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <p class="muted small">只展示团队累计目标，不公开个人排名。</p>
+    `;
+  } else if (id === "campus") {
+    body = `
+      <h3>挑战进度</h3>
+      <div class="data-grid">
+        <div class="data-tile"><span class="muted small">已参与</span><strong>368 人</strong></div>
+        <div class="data-tile"><span class="muted small">距结束</span><strong>5 天</strong></div>
+        <div class="data-tile"><span class="muted small">每日新增</span><strong>34 人</strong></div>
+        <div class="data-tile"><span class="muted small">完成奖励</span><strong>+80 能量</strong></div>
+      </div>
+      <p class="muted small">期末减压主题：拉伸、深呼吸、慢走任意一项即可参与；不强制连续打卡。</p>
+    `;
+  } else if (id === "buddy") {
+    body = `
+      <h3>你的搭子</h3>
+      <article class="card setting-row">
+        <span><strong>L 同学</strong><p>近 7 天 5 次轻运动 · 偏好晚饭后</p></span>
+        <button class="btn secondary" data-action="generic">提醒上线</button>
+      </article>
+      <p class="muted small">两人各完成 1 个轻任务即可点亮双人徽章；不看谁更强，只看是否一起完成。</p>
+    `;
+  }
+
+  return `
+    <div class="screen-title">
+      <button class="icon-btn" data-action="close-challenge">←</button>
+      <h2>${item.title}</h2>
+    </div>
+    <section class="card hero-card stack">
+      <p class="muted">${item.desc}</p>
+      <div class="progress" style="--value:${progress}%"><span></span></div>
+      <div class="row"><span class="small muted">${item.progress}/${item.target}</span><span class="pill">不排名</span></div>
+      <button class="btn ${joined ? "secondary" : ""}" data-action="join-challenge" data-challenge="${id}">${joined ? "今日已参与" : item.action}</button>
+    </section>
+    <section class="section card task-card stack">
+      ${body}
+    </section>
+  `;
+}
+
 function renderBenefits() {
+  if (state.benefitDetail) return renderBenefitDetail(state.benefitDetail);
+  const tab = state.benefitTab || "recommend";
   return `
     <div class="screen-title">
       <div>
@@ -563,13 +704,23 @@ function renderBenefits() {
       </div>
       <span class="pill">合作商家</span>
     </div>
+    <div class="sub-tabs">
+      <button class="sub-tab ${tab === "recommend" ? "active" : ""}" data-action="benefit-tab" data-benefit-tab="recommend">推荐</button>
+      <button class="sub-tab ${tab === "mine" ? "active" : ""}" data-action="benefit-tab" data-benefit-tab="mine">我的权益 ${state.claimedBenefits.length ? `· ${state.claimedBenefits.length}` : ""}</button>
+    </div>
+    ${tab === "recommend" ? renderBenefitRecommend() : renderBenefitMine()}
+  `;
+}
+
+function renderBenefitRecommend() {
+  return `
     <section class="card hero-card">
       <h2>运动兴趣分析</h2>
       <p class="muted">根据最近任务，系统识别你对 <strong>减脂训练</strong> 和 <strong>肩颈放松</strong> 兴趣较高，为你推荐以下校园周边权益。</p>
       <div class="tags">
         <span class="pill">减脂任务 5 次</span>
         <span class="pill">拉伸任务 4 次</span>
-        <span class="pill">权益转化模拟</span>
+        <span class="pill">规则推荐</span>
       </div>
     </section>
     <section class="section stack">
@@ -578,10 +729,32 @@ function renderBenefits() {
   `;
 }
 
-function renderBenefit(item) {
-  const claimed = state.claimedBenefits.includes(item.id);
+function renderBenefitMine() {
+  const pending = state.claimedBenefits.filter((id) => !state.redeemedBenefits.includes(id));
+  const redeemed = state.redeemedBenefits;
+  if (pending.length === 0 && redeemed.length === 0) {
+    return `
+      <section class="card task-card stack">
+        <h3>还没有领取过权益</h3>
+        <p class="muted small">去"推荐"里领一张校园周边的体验券吧，到店核销可以解锁权益探索家徽章。</p>
+        <button class="btn" data-action="benefit-tab" data-benefit-tab="recommend">去看推荐</button>
+      </section>
+    `;
+  }
   return `
-    <article class="card benefit-card stack">
+    ${pending.length ? `<section class="section stack"><h3 class="section-title">待核销 · ${pending.length}</h3>${pending.map((id) => renderBenefit(benefits.find((b) => b.id === id))).join("")}</section>` : ""}
+    ${redeemed.length ? `<section class="section stack"><h3 class="section-title">已核销 · ${redeemed.length}</h3>${redeemed.map((id) => renderBenefit(benefits.find((b) => b.id === id))).join("")}</section>` : ""}
+  `;
+}
+
+function renderBenefit(item) {
+  if (!item) return "";
+  const claimed = state.claimedBenefits.includes(item.id);
+  const redeemed = state.redeemedBenefits.includes(item.id);
+  const code = `CFQ-${item.id.toUpperCase().slice(0, 4)}-0526`;
+  const status = redeemed ? "已核销" : claimed ? "待核销" : null;
+  return `
+    <article class="card benefit-card stack clickable" data-action="open-benefit" data-benefit="${item.id}">
       <div class="row">
         <div>
           <h3>${item.shop}</h3>
@@ -596,11 +769,70 @@ function renderBenefit(item) {
         <strong>${item.offer}</strong>
         <p class="muted small">${item.until}</p>
       </div>
-      ${claimed ? `<div class="benefit-code">核销码 CFQ-${item.id.toUpperCase().slice(0, 4)}-0526</div>` : ""}
-      <button class="btn ${claimed ? "secondary" : ""}" data-action="claim-benefit" data-benefit="${item.id}">
-        ${claimed ? "已领取 · 待核销" : "领取权益"}
-      </button>
+      ${claimed && !redeemed ? `<div class="benefit-code">核销码 ${code}</div>` : ""}
+      <div class="row">
+        ${status ? `<span class="pill ${redeemed ? "pill-done" : "pill-warn"}">${status}</span>` : `<span class="small muted">点击查看商家详情</span>`}
+        <button class="btn ${claimed ? "secondary" : ""}" data-action="claim-benefit" data-benefit="${item.id}" ${claimed ? "disabled" : ""}>
+          ${redeemed ? "已核销" : claimed ? "已领取" : "领取权益"}
+        </button>
+      </div>
     </article>
+  `;
+}
+
+function renderBenefitDetail(id) {
+  const item = benefits.find((b) => b.id === id);
+  if (!item) return renderBenefits();
+  const claimed = state.claimedBenefits.includes(id);
+  const redeemed = state.redeemedBenefits.includes(id);
+  const reviewed = state.reviewedBenefits.includes(id);
+  const code = `CFQ-${id.toUpperCase().slice(0, 4)}-0526`;
+  return `
+    <div class="screen-title">
+      <button class="icon-btn" data-action="close-benefit">←</button>
+      <h2>${item.shop}</h2>
+    </div>
+    <section class="card hero-card stack">
+      <div class="row">
+        <div>
+          <strong style="font-size:18px">${item.offer}</strong>
+          <p class="muted small">${item.until}</p>
+        </div>
+        <span class="pill">合作商家</span>
+      </div>
+      <div class="tags">
+        <span class="pill">${item.tag}</span>
+        <span class="pill">${item.distance}</span>
+      </div>
+    </section>
+    <section class="card task-card stack">
+      <h3>商家信息</h3>
+      <p class="muted small">营业时间 09:00 - 22:00 · 客服电话 400-CFQ-DEMO</p>
+      <p class="muted small">合作披露：本权益由 ${item.shop} 独立提供与履约，平台按到店核销获得分成。</p>
+      <p class="muted small">退订规则：领取后 7 天内未到店核销自动失效，能量记录不受影响。</p>
+    </section>
+    ${claimed && !redeemed
+      ? `
+        <section class="card task-card stack">
+          <h3>核销码</h3>
+          <div class="benefit-code">${code}</div>
+          <p class="muted small">到店后向工作人员出示此码，工作人员后台勾选完成核销。</p>
+          <button class="btn" data-action="redeem-benefit" data-benefit="${id}">模拟立即核销</button>
+        </section>`
+      : ""}
+    ${redeemed
+      ? `
+        <section class="card task-card stack">
+          <h3>核销成功</h3>
+          <p class="muted small">核销时间 2026-05-10 12:00 · 核销码 ${code}</p>
+          ${reviewed
+            ? `<p class="muted">已提交评价：体验不错，会带室友一起来。</p>`
+            : `<button class="btn secondary" data-action="review-benefit" data-benefit="${id}">前往评价</button>`}
+        </section>`
+      : ""}
+    ${!claimed
+      ? `<button class="btn" data-action="claim-benefit" data-benefit="${id}">领取权益</button>`
+      : ""}
   `;
 }
 
@@ -660,9 +892,9 @@ function renderPlanet() {
         ${badgeDefs
           .map(
             ([id, name, icon]) => `
-              <div class="badge ${unlocked.has(id) ? "" : "locked"}">
+              <button class="badge ${unlocked.has(id) ? "" : "locked"}" data-action="open-badge" data-badge="${id}">
                 <span>${icon}</span>${name}
-              </div>
+              </button>
             `,
           )
           .join("")}
@@ -736,13 +968,150 @@ function renderDetail(detail) {
     cancel: "注销账号流程",
     about: "关于产品",
   };
+  const title =
+    state.aboutSection && detail === "about"
+      ? aboutSectionTitle(state.aboutSection)
+      : titleMap[detail] || "详情";
   return `
     <div class="screen-title">
-      <button class="icon-btn" data-action="detail" data-detail="">←</button>
-      <h2>${titleMap[detail] || "详情"}</h2>
+      <button class="icon-btn" data-action="detail-back">←</button>
+      <h2>${title}</h2>
     </div>
     ${detailContent(detail)}
   `;
+}
+
+function aboutSectionTitle(id) {
+  return {
+    faq: "常见问题",
+    feedback: "意见反馈",
+    complaint: "投诉举报",
+    sdk: "第三方 SDK 清单",
+    icp: "备案信息",
+    version: "版本与边界声明",
+  }[id] || "关于产品";
+}
+
+function renderAboutSection(id) {
+  if (id === "faq") {
+    const items = [
+      ["如何累积能量？", "完成今日任务、加入挑战、领取核销权益都会进入能量事件流。能量按事件追加，不会被覆盖。"],
+      ["断签了怎么办？", "进入复活模式，不补历史、不惩罚，只完成 1 次轻任务即可点亮重新启动徽章。"],
+      ["权益领了没去核销会怎样？", "7 天后自动失效，能量记录不受影响。"],
+      ["怎么注销账号？", "我的 → 注销账号流程 → 7 天冷静期内可撤回，到期后真实删除服务端数据。"],
+      ["平台是否给学分？", "不承诺。我们只做运动激励、轻社交挑战和周边权益推荐。"],
+    ];
+    return `
+      <section class="stack">
+        ${items
+          .map(
+            ([q, a]) => `
+              <article class="card task-card stack">
+                <strong>${q}</strong>
+                <p class="muted small">${a}</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </section>
+    `;
+  }
+
+  if (id === "feedback") {
+    return `
+      <section class="card task-card stack">
+        <h3>意见反馈</h3>
+        <p class="muted small">承诺 7 个工作日内人工回复；涉及隐私 / 合规问题会优先处理。</p>
+        <label class="form-field"><span class="small muted">问题分类</span><input value="功能建议"></label>
+        <label class="form-field"><span class="small muted">详细描述</span><input id="feedback-text" placeholder="例如：希望增加跑步路线自定义功能"></label>
+        <label class="form-field"><span class="small muted">联系方式（选填）</span><input value="13800138000"></label>
+        <button class="btn" data-action="submit-feedback">提交反馈</button>
+      </section>
+      ${state.feedbackThread.length
+        ? `
+          <section class="section stack">
+            <h3 class="section-title">我的反馈</h3>
+            ${state.feedbackThread
+              .map(
+                (item) => `
+                  <article class="card setting-row">
+                    <span><strong>${item.text}</strong><p>${item.at} · ${item.status}</p></span>
+                  </article>
+                `,
+              )
+              .join("")}
+          </section>`
+        : ""}
+    `;
+  }
+
+  if (id === "complaint") {
+    return `
+      <section class="card task-card stack">
+        <h3>投诉举报</h3>
+        <p class="muted small">站内：support@campus-fit.example · 7 个工作日响应。</p>
+        <p class="muted small">监管：12321 不良信息举报 · 网信办违法和不良信息举报中心。</p>
+      </section>
+      <section class="card task-card stack">
+        <h3>个人信息保护负责人</h3>
+        <p class="muted small">姓名：谢晨璇 · 邮箱：dpo@campus-fit.example</p>
+        <p class="muted small">数据泄露 72 小时内通知监管和受影响用户。</p>
+      </section>
+    `;
+  }
+
+  if (id === "sdk") {
+    const rows = [
+      ["短信验证码 SDK", "登录验证", "处理：手机号", "境内"],
+      ["推送 SDK", "运动提醒、权益到期", "处理：设备 token", "境内"],
+      ["客服 SDK", "意见反馈对话", "处理：内容、联系方式", "境内"],
+      ["崩溃监控 SDK", "异常上报", "处理：堆栈、设备机型", "境内"],
+    ];
+    return `
+      <section class="stack">
+        ${rows
+          .map(
+            ([name, use, data, region]) => `
+              <article class="card task-card stack">
+                <strong>${name}</strong>
+                <p class="muted small">用途：${use}</p>
+                <p class="muted small">${data} · 数据存储：${region}</p>
+              </article>
+            `,
+          )
+          .join("")}
+        <p class="muted small">SDK 仅在用户同意隐私政策后生效；用户拒绝后会走系统降级方案。</p>
+      </section>
+    `;
+  }
+
+  if (id === "icp") {
+    return `
+      <section class="card task-card stack">
+        <h3>备案信息</h3>
+        <p class="muted small">ICP 备案：沪 ICP 备 20260510 号-演示</p>
+        <p class="muted small">应用备案：编号 SH2026-CFQ-DEMO</p>
+        <p class="muted small">算法备案：规则推荐已登记，所有算法可在"个性化推荐管理"中关闭。</p>
+        <p class="muted small">运营主体：演示主体，仅用于面试 Demo。</p>
+      </section>
+    `;
+  }
+
+  if (id === "version") {
+    return `
+      <section class="card task-card stack">
+        <h3>版本</h3>
+        <p class="muted small">v0.1.0 · 2026-05-10 构建 · 静态 Web Demo</p>
+      </section>
+      <section class="card task-card stack">
+        <h3>边界声明</h3>
+        <p class="muted small">不承诺学分加分、不接入教务系统、不申请通讯录 / 麦克风 / 全部相册等无关权限。</p>
+        <p class="muted small">校园跑作弊不可能完美，平台通过单日上限 + 配速合理性 + 二维码点位多维校验缓解。</p>
+      </section>
+    `;
+  }
+
+  return `<section class="card task-card"><p class="muted small">敬请期待。</p></section>`;
 }
 
 function detailContent(detail) {
@@ -767,22 +1136,22 @@ function detailContent(detail) {
   }
 
   if (detail === "devices") {
+    if (state.devices.length === 0) {
+      return `<section class="card task-card"><h3>所有设备已清空</h3><p class="muted small">下次使用任意设备登录会重新出现在这里。</p></section>`;
+    }
     return `
       <section class="stack">
-        ${[
-          ["iPhone 15 · 当前设备", "上海 · 2026-05-10 09:20", true],
-          ["微信内置浏览器", "杭州 · 2026-05-08 21:16", false],
-          ["MacBook Chrome", "上海 · 2026-05-06 15:42", false],
-        ]
+        ${state.devices
           .map(
-            ([name, meta, current]) => `
+            (dev) => `
               <article class="card setting-row">
-                <span><strong>${name}</strong><p>最后使用：${meta}</p></span>
-                <button class="btn ${current ? "secondary" : "danger"}" ${current ? "disabled" : ""} data-action="kick-device">${current ? "当前" : "踢出"}</button>
+                <span><strong>${dev.name}</strong><p>最后使用：${dev.meta}</p></span>
+                <button class="btn ${dev.current ? "secondary" : "danger"}" ${dev.current ? "disabled" : ""} data-action="kick-device" data-device="${dev.id}">${dev.current ? "当前" : "踢出"}</button>
               </article>
             `,
           )
           .join("")}
+        <p class="muted small">异地登录会通过推送 + 站内消息提醒；关键操作会触发二次验证。</p>
       </section>
     `;
   }
@@ -907,7 +1276,32 @@ function detailContent(detail) {
   }
 
   if (detail === "about") {
-    return `<section class="card task-card stack"><h3>校园运动星球 v0.1.0</h3><p class="muted">第三方 SDK：MVP 暂无。备案信息：沪 ICP 备 20260510 号-演示。客服与投诉：support@campus-fit.example，7 个工作日响应。</p><p class="muted">边界声明：不承诺学分加分，不接入教务系统，不申请无关权限。</p></section>`;
+    if (state.aboutSection) return renderAboutSection(state.aboutSection);
+    const sections = [
+      ["faq", "常见问题", "登录、能量、权益、注销 4 大类高频问题"],
+      ["feedback", "意见反馈", "提交反馈，承诺 7 个工作日内回复"],
+      ["complaint", "投诉举报", "12321、网信办等监管投诉渠道"],
+      ["sdk", "第三方 SDK 清单", "本期使用的 SDK 与用途说明"],
+      ["icp", "备案信息", "ICP 备案、应用备案、算法备案"],
+      ["version", "版本与边界声明", "v0.1.0 · 不承诺学分 / 教务接入"],
+    ];
+    return `
+      <section class="card hero-card stack">
+        <h2>校园运动星球 v0.1.0</h2>
+        <p class="muted small">作者：谢晨璇 · 用途：NoCode 测评作品 / 产品作品集</p>
+      </section>
+      <section class="section settings-list">
+        ${sections
+          .map(
+            ([id, title, desc]) => `
+              <button class="card setting-row" data-action="about-section" data-about="${id}">
+                <span><strong>${title}</strong><p>${desc}</p></span><span>›</span>
+              </button>
+            `,
+          )
+          .join("")}
+      </section>
+    `;
   }
 
   if (detail === "terms") {
@@ -978,7 +1372,16 @@ function handleClick(event) {
     showToast("登录成功，今日任务已准备好");
   }
   if (action === "guest") patch({ loggedIn: true, privacyStatus: state.privacyStatus || "browse" });
-  if (action === "tab") patch({ tab: target.dataset.tab, detail: null, route: null });
+  if (action === "tab")
+    patch({
+      tab: target.dataset.tab,
+      detail: null,
+      route: null,
+      challengeDetail: null,
+      benefitDetail: null,
+      badgeDetail: null,
+      aboutSection: null,
+    });
   if (action === "offline") patch({ offline: !state.offline });
   if (action === "mode") patch({ mode: target.dataset.mode });
   if (action === "complete-task") completeTask(target.dataset.task);
@@ -999,7 +1402,10 @@ function handleClick(event) {
       patch({ route: { ...state.route, step: nextStep } });
     }
   }
+  if (action === "open-challenge") patch({ challengeDetail: target.dataset.challenge });
+  if (action === "close-challenge") patch({ challengeDetail: null });
   if (action === "join-challenge") {
+    event.stopPropagation();
     const id = target.dataset.challenge;
     if (!state.joinedChallenges.includes(id)) {
       state.joinedChallenges = [...state.joinedChallenges, id];
@@ -1007,15 +1413,64 @@ function handleClick(event) {
       showToast("已加入挑战，今日贡献已记录");
     }
   }
+  if (action === "open-benefit") patch({ benefitDetail: target.dataset.benefit });
+  if (action === "close-benefit") patch({ benefitDetail: null });
+  if (action === "benefit-tab") patch({ benefitTab: target.dataset.benefitTab });
   if (action === "claim-benefit") {
+    event.stopPropagation();
     const id = target.dataset.benefit;
     if (!state.claimedBenefits.includes(id)) {
       state.claimedBenefits = [...state.claimedBenefits, id];
-      addEnergy(10, "BENEFIT_CLAIM", "benefit");
+      addEnergy(10, "BENEFIT_CLAIM");
       showToast("权益已领取，核销码已生成");
     }
   }
-  if (action === "detail") patch({ tab: state.loggedIn ? "me" : state.tab, detail: target.dataset.detail || null });
+  if (action === "redeem-benefit") {
+    const id = target.dataset.benefit;
+    if (state.claimedBenefits.includes(id) && !state.redeemedBenefits.includes(id)) {
+      state.redeemedBenefits = [...state.redeemedBenefits, id];
+      state.energyEvents = [
+        ...state.energyEvents,
+        { id: `BENEFIT_REDEEM-${Date.now()}`, type: "BENEFIT_REDEEM", delta: 20, at: Date.now() },
+      ];
+      if (!state.badges.includes("benefit")) state.badges = [...state.badges, "benefit"];
+      saveState();
+      reward = "+20 能量";
+      showToast("核销成功，期待你的评价");
+      render();
+      window.setTimeout(() => {
+        reward = null;
+        render();
+      }, 1100);
+    }
+  }
+  if (action === "review-benefit") {
+    const id = target.dataset.benefit;
+    if (!state.reviewedBenefits.includes(id)) {
+      state.reviewedBenefits = [...state.reviewedBenefits, id];
+      saveState();
+      showToast("评价已提交，感谢你的反馈");
+      render();
+    }
+  }
+  if (action === "open-badge") patch({ badgeDetail: target.dataset.badge });
+  if (action === "close-badge") patch({ badgeDetail: null });
+  if (action === "about-section") patch({ aboutSection: target.dataset.about });
+  if (action === "submit-feedback") {
+    const text = (document.getElementById("feedback-text")?.value || "功能建议").trim() || "功能建议";
+    state.feedbackThread = [
+      { text, at: "刚刚", status: "已受理 · 7 个工作日内回复" },
+      ...state.feedbackThread,
+    ];
+    saveState();
+    showToast("反馈已提交，已生成工单");
+    render();
+  }
+  if (action === "detail") patch({ tab: state.loggedIn ? "me" : state.tab, detail: target.dataset.detail || null, aboutSection: null });
+  if (action === "detail-back") {
+    if (state.aboutSection) patch({ aboutSection: null });
+    else patch({ detail: null });
+  }
   if (action === "push-style") patch({ pushStyle: target.dataset.style });
   if (action === "toggle-permission") {
     const key = target.dataset.permission;
@@ -1026,7 +1481,15 @@ function handleClick(event) {
     navigator.clipboard?.writeText(JSON.stringify(state, null, 2));
     showToast("已模拟导出数据，并复制到剪贴板");
   }
-  if (action === "kick-device") showToast("已模拟踢出该设备");
+  if (action === "kick-device") {
+    const id = target.dataset.device;
+    if (id) {
+      state.devices = state.devices.filter((d) => d.id !== id);
+      saveState();
+      showToast("已踢出该设备，对方需重新登录");
+      render();
+    }
+  }
   if (action === "cancel-start") {
     patch({ cancellation: { enteredAt: Date.now() } });
     showToast("已进入 7 天冷静期，第 7 天到期后真实删除");

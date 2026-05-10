@@ -283,6 +283,71 @@ button {
   color: var(--text);
 }
 
+.sub-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sub-tab {
+  min-height: 36px;
+  border-radius: 11px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sub-tab.active {
+  color: #11162c;
+  background: var(--yellow);
+}
+
+.clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.clickable:active {
+  transform: scale(0.98);
+}
+
+.chevron {
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.section-title {
+  margin: 4px 2px 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.pill-warn {
+  background: rgba(255, 209, 102, 0.22);
+  border-color: rgba(255, 209, 102, 0.45);
+  color: var(--yellow);
+}
+
+.pill-done {
+  background: rgba(98, 230, 167, 0.22);
+  border-color: rgba(98, 230, 167, 0.5);
+  color: var(--green);
+}
+
+.badge {
+  cursor: pointer;
+}
+
 .hero-card {
   position: relative;
   overflow: hidden;
@@ -455,6 +520,7 @@ button {
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
   text-align: center;
   font-size: 12px;
   font-weight: 800;
