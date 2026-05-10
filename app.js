@@ -123,9 +123,11 @@ const defaultState = {
   claimedBenefits: [],
   joinedChallenges: [],
   pushStyle: "吐槽陪伴型",
-  energyEvents: [{ id: "seed", type: "INITIAL", delta: 860, at: Date.now() - 86400000 * 6 }],
-  badges: ["small-step", "weekly"],
+  energyEvents: [],
+  badges: [],
   route: null,
+  cancellation: null,
+  agreementChecked: false,
   permissions: {
     定位: "已开启",
     相机: "已开启",
@@ -164,6 +166,28 @@ function energyTotal() {
 
 function level() {
   return Math.max(1, Math.floor(energyTotal() / 500) + 1);
+}
+
+function totalMinutes() {
+  const all = Object.values(tasksByMode).flat();
+  return state.completedTasks.reduce((sum, id) => {
+    if (id === "campus-run-flow") return sum + 15;
+    const task = all.find((t) => t.id === id);
+    return sum + (task ? task.minutes : 0);
+  }, 0);
+}
+
+function reviveCount() {
+  const reviveIds = tasksByMode.revive.map((t) => t.id);
+  return state.completedTasks.filter((id) => reviveIds.includes(id)).length;
+}
+
+function cancellationDayInfo() {
+  if (!state.cancellation) return null;
+  const elapsed = Math.floor((Date.now() - state.cancellation.enteredAt) / 86400000);
+  const day = Math.min(7, elapsed + 1);
+  const remaining = Math.max(0, 7 - elapsed);
+  return { day, remaining };
 }
 
 function showToast(message) {
@@ -218,12 +242,15 @@ function planetSvg(sizeClass = "") {
 }
 
 function shell(content, withTabs = true) {
+  const offlineBanner =
+    state.offline && state.loggedIn
+      ? `<div class="offline-bar">当前离线，运动数据会在联网后自动同步</div>`
+      : "";
   return `
     <div class="desktop-shell">
       <div class="phone-frame">
         <div class="app">
-          ${state.offline && state.loggedIn ? `<div class="offline-bar">当前离线，运动数据会在联网后自动同步</div>` : ""}
-          <main class="app-main">${content}</main>
+          <main class="app-main">${offlineBanner}${content}</main>
           ${reward ? `<div class="reward-pop">${reward}</div>` : ""}
           ${toast ? `<div class="toast">${toast}</div>` : ""}
           ${withTabs && state.loggedIn ? renderTabs() : ""}
@@ -287,7 +314,7 @@ function renderLogin() {
             <input id="code" value="0526" inputmode="numeric" />
           </label>
           <label class="check-row">
-            <input id="agreement" type="checkbox" />
+            <input id="agreement" type="checkbox" ${state.agreementChecked ? "checked" : ""} />
             <span>我已阅读并同意
               <button class="link-btn" data-action="detail" data-detail="terms">《用户服务协议》</button>
               <button class="link-btn" data-action="detail" data-detail="privacy">《隐私政策》</button>
@@ -579,19 +606,24 @@ function renderBenefit(item) {
 
 function renderPlanet() {
   const unlocked = new Set(state.badges);
+  const taskCount = state.completedTasks.length;
+  const minutesCount = totalMinutes();
+  const reviveDone = reviveCount();
+  const allActions = taskCount + state.joinedChallenges.length;
+  const certProgress = Math.min(100, Math.round(((taskCount + state.badges.length * 2) / 16) * 100));
   return `
     <div class="screen-title">
       <div>
         <div class="eyebrow">My Planet</div>
         <h1>星球档案</h1>
       </div>
-      <span class="pill">认证进度 72%</span>
+      <span class="pill">认证进度 ${certProgress}%</span>
     </div>
     <section class="card hero-card">
       <div class="row">
         <div>
           <div class="energy-number">Lv.${level()}</div>
-          <p class="muted">总能量 ${energyTotal()} · 本周运动 3 次 · 中断后重启 1 次</p>
+          <p class="muted">总能量 ${energyTotal()} · 本周运动 ${taskCount} 次 · 中断后重启 ${reviveDone} 次</p>
         </div>
         ${planetSvg()}
       </div>
@@ -601,13 +633,13 @@ function renderPlanet() {
       <table class="compare-table">
         <thead><tr><th>指标</th><th>上周</th><th>本周</th></tr></thead>
         <tbody>
-          <tr><td>运动次数</td><td>2 次</td><td>3 次</td></tr>
-          <tr><td>累计时长</td><td>35 分钟</td><td>48 分钟</td></tr>
-          <tr><td>完成任务</td><td>5 个</td><td>${Math.max(7, state.completedTasks.length)} 个</td></tr>
-          <tr><td>中断后重启</td><td>0 次</td><td>1 次</td></tr>
+          <tr><td>运动次数</td><td>2 次</td><td>${taskCount} 次</td></tr>
+          <tr><td>累计时长</td><td>35 分钟</td><td>${minutesCount} 分钟</td></tr>
+          <tr><td>完成任务</td><td>5 个</td><td>${allActions} 个</td></tr>
+          <tr><td>中断后重启</td><td>0 次</td><td>${reviveDone} 次</td></tr>
         </tbody>
       </table>
-      <p class="muted">你没有打败别人，但你超过了上周的自己。</p>
+      <p class="muted">${taskCount === 0 ? "动一下就有数据，星球在等你启程。" : "你没有打败别人，但你超过了上周的自己。"}</p>
     </section>
     <section class="section">
       <h2>个人最佳</h2>
@@ -646,6 +678,7 @@ function renderMe() {
     ["permissions", "权限管理中心", "定位、相机、通知、健康数据的用途和降级方案"],
     ["data", "个人信息管理", "查看、导出、删除、撤回同意"],
     ["push", "通知与提醒", "推送风格、免打扰、频率控制"],
+    ["push-center", "推送预览中心", "6 类推送文案 · 频率控制 · 场景策略"],
     ["devices", "登录设备管理", "当前设备、异地登录、踢出设备"],
     ["teen", "青少年模式", "时长限制、时段限制、内容过滤"],
     ["terms", "用户服务协议", "服务规则与责任边界"],
@@ -695,6 +728,7 @@ function renderDetail(detail) {
     permissions: "权限管理中心",
     data: "个人信息管理",
     push: "通知与提醒",
+    "push-center": "推送预览中心",
     devices: "登录设备管理",
     teen: "青少年模式",
     terms: "用户服务协议",
@@ -754,6 +788,22 @@ function detailContent(detail) {
   }
 
   if (detail === "cancel") {
+    const info = cancellationDayInfo();
+    if (info) {
+      return `
+        <section class="card task-card stack">
+          <h3>注销冷静期进行中</h3>
+          <div class="progress" style="--value:${(info.day / 7) * 100}%"><span></span></div>
+          <p class="muted">第 ${info.day} / 7 天 · 还剩 ${info.remaining} 天到期真实删除。</p>
+          <p class="muted small">期间随时可撤回，撤回后账号、能量、徽章、权益保持原样。</p>
+          <button class="btn" data-action="cancel-withdraw">撤回注销，继续使用</button>
+        </section>
+        <section class="card task-card stack">
+          <h3>到期后将删除的数据</h3>
+          <p class="muted small">手机号绑定、运动记录、能量事件流、已领取权益、徽章、设置偏好；不可恢复。</p>
+        </section>
+      `;
+    }
     return `
       <section class="card task-card stack">
         <h3>注销路径不比注册更难</h3>
@@ -762,6 +812,58 @@ function detailContent(detail) {
         <p class="muted">步骤 3 冷静期：进入 7 天冷静期，期间可撤回。</p>
         <p class="muted">步骤 4 到期删除：冷静期后真实删除服务端数据。</p>
         <button class="btn danger" data-action="cancel-start">模拟进入 7 天冷静期</button>
+      </section>
+    `;
+  }
+
+  if (detail === "push-center") {
+    const buckets = [
+      ["轻启动型", "用户当天还没开始运动", [
+        "今天不要求燃烧卡路里，先完成 3 分钟拉伸就算赢。",
+        "你的星球电量有点低，走 800 步就能恢复一点。",
+      ]],
+      ["情绪安抚型", "用户中断 / 长期未完成", [
+        "你不是失败了，只是暂停了几天。今天可以重新开始。",
+        "星球没有怪你，它只是有点想你。",
+      ]],
+      ["自我进步型", "已有运动记录的用户", [
+        "你这周已经运动 3 次，比上周多 1 次。",
+        "你最近最稳定的运动时间是晚饭后，要不要今天也来 10 分钟？",
+      ]],
+      ["场景触发型", "结合大学生时间节奏", [
+        "下课后的 10 分钟，适合让身体重新开机。",
+        "晚饭后散步 15 分钟，给星球充一点温和能量。",
+      ]],
+      ["趣味人格型", "增强记忆点 · 星球小助手", [
+        "小星球巡逻报告：你已经坐太久了。",
+        "警告：宿舍床正在试图吞噬你，请立即进行低强度反抗。",
+      ]],
+      ["权益召回型", "商业转化", [
+        "你最近完成了 4 次减脂任务，可以领取一次体测体验券。",
+        "本周羽毛球挑战参与人数已达 36 人，低峰场地券还剩 5 张。",
+      ]],
+    ];
+    return `
+      <section class="card task-card stack">
+        <h3>推送策略</h3>
+        <p class="muted small">每日上限 1-2 条 · 22:30-8:00 免打扰 · 连续忽略自动降频 · 用户可按类型关闭。</p>
+      </section>
+      <section class="stack">
+        ${buckets
+          .map(
+            ([name, when, msgs]) => `
+              <article class="card task-card stack">
+                <div>
+                  <strong>${name}</strong>
+                  <p class="muted small">${when}</p>
+                </div>
+                <div class="stack">
+                  ${msgs.map((m) => `<div class="push-bubble">${m}</div>`).join("")}
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
       </section>
     `;
   }
@@ -840,7 +942,12 @@ function renderMain() {
 }
 
 function render() {
-  document.getElementById("root").innerHTML = state.loggedIn ? renderMain() : renderLogin();
+  const root = document.getElementById("root");
+  if (!state.loggedIn && state.detail) {
+    root.innerHTML = shell(renderDetail(state.detail), false);
+    return;
+  }
+  root.innerHTML = state.loggedIn ? renderMain() : renderLogin();
 }
 
 function completeTask(taskId) {
@@ -920,7 +1027,14 @@ function handleClick(event) {
     showToast("已模拟导出数据，并复制到剪贴板");
   }
   if (action === "kick-device") showToast("已模拟踢出该设备");
-  if (action === "cancel-start") showToast("已进入 7 天冷静期，可在期内撤回");
+  if (action === "cancel-start") {
+    patch({ cancellation: { enteredAt: Date.now() } });
+    showToast("已进入 7 天冷静期，第 7 天到期后真实删除");
+  }
+  if (action === "cancel-withdraw") {
+    patch({ cancellation: null });
+    showToast("已撤回注销，账号继续使用");
+  }
   if (action === "generic") showToast("设置已保存");
   if (action === "logout") patch({ loggedIn: false, detail: null, route: null });
   if (action === "reset") {
@@ -931,6 +1045,13 @@ function handleClick(event) {
     render();
   }
 }
+
+document.addEventListener("change", (event) => {
+  if (event.target && event.target.id === "agreement") {
+    state.agreementChecked = !!event.target.checked;
+    saveState();
+  }
+});
 
 document.addEventListener("click", handleClick);
 render();

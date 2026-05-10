@@ -264,17 +264,23 @@ button {
 }
 
 .offline-bar {
-  position: absolute;
-  top: 33px;
-  left: 16px;
-  right: 16px;
-  z-index: 30;
+  margin: 0 0 12px;
   padding: 9px 12px;
   border-radius: 14px;
   background: rgba(255, 159, 85, 0.95);
   color: #22120a;
   font-size: 12px;
   font-weight: 900;
+}
+
+.push-bubble {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--cyan);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 .hero-card {
